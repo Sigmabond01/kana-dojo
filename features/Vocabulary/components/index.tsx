@@ -11,32 +11,15 @@ import useVocabStore from '@/features/Vocabulary/store/useVocabStore';
 import useStatsStore from '@/features/Progress/store/useStatsStore';
 import VocabSetDictionary from '@/features/Vocabulary/components/SetDictionary';
 import { IWord } from '@/shared/types/interfaces';
+import {
+  vocabDataService,
+  VocabLevel
+} from '@/features/Vocabulary/services/vocabDataService';
 
-type RawVocabEntry = {
-  jmdict_seq: string;
-  kana: string;
-  kanji: string;
-  waller_definition: string;
-};
-
-const vocabImporters = {
-  n5: () =>
-    fetch('/vocab/n5.json').then(res => res.json() as Promise<RawVocabEntry[]>),
-  n4: () =>
-    fetch('/vocab/n4.json').then(res => res.json() as Promise<RawVocabEntry[]>),
-  n3: () =>
-    fetch('/vocab/n3.json').then(res => res.json() as Promise<RawVocabEntry[]>),
-  n2: () =>
-    fetch('/vocab/n2.json').then(res => res.json() as Promise<RawVocabEntry[]>),
-  n1: () =>
-    fetch('/vocab/n1.json').then(res => res.json() as Promise<RawVocabEntry[]>)
-} as const;
-
-type VocabCollectionKey = keyof typeof vocabImporters;
-const levelOrder: VocabCollectionKey[] = ['n5', 'n4', 'n3', 'n2', 'n1'];
+const levelOrder: VocabLevel[] = ['n5', 'n4', 'n3', 'n2', 'n1'];
 const WORDS_PER_SET = 10;
 
-const vocabCollectionNames: Record<VocabCollectionKey, string> = {
+const vocabCollectionNames: Record<VocabLevel, string> = {
   n5: 'N5',
   n4: 'N4',
   n3: 'N3',
@@ -49,22 +32,6 @@ type VocabCollectionMeta = {
   name: string;
   prevLength: number;
 };
-
-const toWordObj = (entry: RawVocabEntry): IWord => {
-  const definitionPieces = entry.waller_definition
-    .split(/[;,]/)
-    .map(piece => piece.trim())
-    .filter(Boolean);
-
-  return {
-    word: entry.kanji?.trim() || entry.kana,
-    reading: `${entry.kana}`.trim(),
-    displayMeanings: definitionPieces,
-    meanings: definitionPieces
-  };
-};
-
-// ✅ REMOVED: Intersection Observer animation variants to fix bug where users need to scroll to see first sets
 
 const VocabCards = () => {
   const selectedVocabCollectionName = useVocabStore(
@@ -80,25 +47,24 @@ const VocabCards = () => {
 
   const { playClick } = useClick();
   const [vocabCollections, setVocabCollections] = useState<
-    Partial<Record<VocabCollectionKey, VocabCollectionMeta>>
+    Partial<Record<VocabLevel, VocabCollectionMeta>>
   >({});
 
   useEffect(() => {
     let isMounted = true;
 
     const loadCollections = async () => {
+      // Use cached data service - only fetches if not already cached
       const results = await Promise.all(
         levelOrder.map(async level => {
-          const vocabData = await vocabImporters[level]();
-          return { level, words: vocabData.map(toWordObj) };
+          const words = await vocabDataService.getVocabByLevel(level);
+          return { level, words };
         })
       );
 
       if (!isMounted) return;
 
-      const collections: Partial<
-        Record<VocabCollectionKey, VocabCollectionMeta>
-      > = {};
+      const collections: Partial<Record<VocabLevel, VocabCollectionMeta>> = {};
       let cumulativeSets = 0;
 
       results.forEach(({ level, words }) => {
@@ -120,8 +86,7 @@ const VocabCards = () => {
     };
   }, []);
 
-  const selectedCollectionKey =
-    selectedVocabCollectionName as VocabCollectionKey;
+  const selectedCollectionKey = selectedVocabCollectionName as VocabLevel;
   const selectedVocabCollection = vocabCollections[selectedCollectionKey];
 
   // Filter state for hiding mastered cards

@@ -11,42 +11,18 @@ import useKanjiStore from '@/features/Kanji/store/useKanjiStore';
 import useStatsStore from '@/features/Progress/store/useStatsStore';
 import KanjiSetDictionary from '@/features/Kanji/components/SetDictionary';
 import type { IKanjiObj } from '@/features/Kanji/store/useKanjiStore';
-//triggering vercel redeployment
+import {
+  kanjiDataService,
+  KanjiLevel
+} from '@/features/Kanji/services/kanjiDataService';
 
-type RawKanjiEntry = {
-  id: number;
-  kanjiChar: string;
-  onyomi: string[];
-  kunyomi: string[];
-  displayMeanings: string[];
-  fullDisplayMeanings: string[];
-  meanings: string[];
-};
-
-const kanjiImporters = {
-  n5: () =>
-    fetch('/kanji/N5.json').then(res => res.json() as Promise<RawKanjiEntry[]>),
-  n4: () =>
-    fetch('/kanji/N4.json').then(res => res.json() as Promise<RawKanjiEntry[]>),
-  n3: () =>
-    fetch('/kanji/N3.json').then(res => res.json() as Promise<RawKanjiEntry[]>),
-  n2: () =>
-    fetch('/kanji/N2.json').then(res => res.json() as Promise<RawKanjiEntry[]>),
-  n1: () =>
-    fetch('/kanji/N1.json').then(res => res.json() as Promise<RawKanjiEntry[]>)
-} as const;
-
-type KanjiCollectionKey = keyof typeof kanjiImporters;
-
-const levelOrder: KanjiCollectionKey[] = ['n5', 'n4', 'n3', 'n2', 'n1'];
+const levelOrder: KanjiLevel[] = ['n5', 'n4', 'n3', 'n2', 'n1'];
 
 type KanjiCollectionMeta = {
   data: IKanjiObj[];
   name: string;
   prevLength: number;
 };
-
-// ✅ REMOVED: Intersection Observer animation variants to fix bug where users need to scroll to see first sets
 
 const KanjiCards = () => {
   const selectedKanjiCollectionName = useKanjiStore(
@@ -62,30 +38,29 @@ const KanjiCards = () => {
 
   const { playClick } = useClick();
   const [kanjiCollections, setKanjiCollections] = useState<
-    Partial<Record<KanjiCollectionKey, KanjiCollectionMeta>>
+    Partial<Record<KanjiLevel, KanjiCollectionMeta>>
   >({});
 
   useEffect(() => {
     let isMounted = true;
 
     const loadCollections = async () => {
+      // Use cached data service - only fetches if not already cached
       const results = await Promise.all(
         levelOrder.map(async level => {
-          const kanjiData = await kanjiImporters[level]();
-          return { level, kanji: kanjiData.map(entry => ({ ...entry })) };
+          const kanji = await kanjiDataService.getKanjiByLevel(level);
+          return { level, kanji };
         })
       );
 
       if (!isMounted) return;
 
-      const collections: Partial<
-        Record<KanjiCollectionKey, KanjiCollectionMeta>
-      > = {};
+      const collections: Partial<Record<KanjiLevel, KanjiCollectionMeta>> = {};
       let cumulativeSets = 0;
 
       results.forEach(({ level, kanji }) => {
         collections[level] = {
-          data: kanji as IKanjiObj[],
+          data: kanji,
           name: level.toUpperCase(),
           prevLength: cumulativeSets
         };
@@ -137,7 +112,7 @@ const KanjiCards = () => {
   }, [allTimeStats.characterMastery]);
 
   const selectedKanjiCollection =
-    kanjiCollections[selectedKanjiCollectionName as KanjiCollectionKey];
+    kanjiCollections[selectedKanjiCollectionName as KanjiLevel];
 
   if (!selectedKanjiCollection) {
     return (
